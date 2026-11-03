@@ -1,0 +1,9 @@
+{
+  "slug": "sub-rosa",
+  "name": "Sub Rosa — Private RFQ",
+  "version": "0.1.0",
+  "description": "Coordinates tenant-scoped private RFQs backed by client-signed Sub Rosa ReceiptOnly rounds while settlement remains in Cosmos Pay.",
+  "author": "Sub Rosa contributors (https://github.com/karagozemin/Sub-Rosa)",
+  "capabilities": ["payment_intents:read"],
+  "egress": []
+}

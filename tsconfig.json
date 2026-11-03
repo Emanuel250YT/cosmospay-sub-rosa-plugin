@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "paths": {
+      "@/plugins/sdk": ["./test/support/cosmos-pay-sdk.ts"]
+    },
+    "types": ["node", "vitest/globals"]
+  },
+  "include": [
+    "plugin/**/*.ts",
+    "src/**/*.ts",
+    "examples/**/*.ts",
+    "test/unit/**/*.ts",
+    "test/support/**/*.ts",
+    "vitest.config.ts"
+  ]
+}
