@@ -2,9 +2,10 @@
 
 Cosmos Pay support reviewed `plugin/sub-rosa` 0.1.0 and this companion client
 before shipping the plugin preinstalled in the Community Server
-(`plugins/sub-rosa/`, signed by the support key). The plugin that ships is
-**0.2.0**, hardened as below; this repository should take it over once the
-Community Server release that carries it is out.
+(`plugins/sub-rosa/`, to be signed by the support key; see
+https://github.com/CosmosPay/CosmosPay-Community-Server/pull/141). The plugin
+that ships is **0.2.0**, hardened as below; this repository should take it over
+once the Community Server release that carries it is out.
 
 ## Plugin findings, fixed in 0.2.0
 
