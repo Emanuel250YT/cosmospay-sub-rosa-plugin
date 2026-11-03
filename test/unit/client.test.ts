@@ -7,6 +7,7 @@ import {
   canonicalRfqItemRef,
   sha256Hex,
 } from '../../src/canonical-rfq.js';
+import { CosmosPaySubRosaClient } from '../../src/cosmos-pay-client.js';
 
 describe('companion-client evidence helpers', () => {
   it('canonicalizes object keys and hashes RFQs deterministically', () => {
@@ -27,6 +28,48 @@ describe('companion-client evidence helpers', () => {
     expect(sha256Hex('receipt\n')).toBe(
       '6afd9c1cbf495f9221fe5f9d03d4f0e962babd83fd293c696e69686510611a63',
     );
+  });
+
+  it('sends an API key to the gateway, and the gateway secret only to this machine', () => {
+    expect(
+      () =>
+        new CosmosPaySubRosaClient({
+          baseUrl: 'https://api.cosmospay.lat/cosmos-api',
+          apiKey: 'ck_live_x',
+        }),
+    ).not.toThrow();
+    expect(
+      () =>
+        new CosmosPaySubRosaClient({
+          baseUrl: 'http://127.0.0.1:3000',
+          gatewaySecret: 's',
+          consumerUsername: 'u',
+        }),
+    ).not.toThrow();
+    expect(
+      () =>
+        new CosmosPaySubRosaClient({
+          baseUrl: 'https://api.cosmospay.lat/cosmos-api',
+          gatewaySecret: 's',
+          consumerUsername: 'u',
+        }),
+    ).toThrow('this machine only');
+    expect(
+      () =>
+        new CosmosPaySubRosaClient({
+          baseUrl: 'http://api.example.com',
+          apiKey: 'ck_live_x',
+        }),
+    ).toThrow('must be https');
+    expect(
+      () =>
+        new CosmosPaySubRosaClient({
+          baseUrl: 'https://api.example.com',
+          apiKey: 'k',
+          gatewaySecret: 's',
+          consumerUsername: 'u',
+        }),
+    ).toThrow('either apiKey or gatewaySecret');
   });
 
   it('performs checksum-valid Stellar StrKey validation client-side', () => {

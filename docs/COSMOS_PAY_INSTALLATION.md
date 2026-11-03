@@ -29,8 +29,20 @@ npm run start:dev
 Never enable `PLUGINS_ALLOW_UNSIGNED` in production; Cosmos Pay rejects that
 configuration there.
 
-Install the plugin for a tenant with a gateway-authenticated key holding
-`plugins:write`:
+Install the plugin for a tenant with a key holding `plugins:write`. Against a
+real deployment, send that API key to the gateway:
+
+```bash
+curl -X PUT "$COSMOS_PAY_URL/v1/plugins/sub-rosa/installation" \
+  -H 'content-type: application/json' \
+  -H "authorization: Bearer $COSMOS_PAY_API_KEY" \
+  -d '{"grantCapabilities":["payment_intents:read"]}'
+```
+
+Only against a development server on your own machine, with no gateway in
+front, impersonate a consumer with the gateway headers. The gateway secret acts
+as any consumer with any permissions: never use a deployment's, and never send
+it to a host that is not this machine (`CosmosPaySubRosaClient` refuses to).
 
 ```bash
 curl -X PUT http://127.0.0.1:3000/v1/plugins/sub-rosa/installation \
