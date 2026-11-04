@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Keypair } from '@stellar/stellar-sdk';
+import { remainingRevealWaitMs } from '../../../src/reveal-timing.js';
 import {
   SEALED_PROPOSAL_SCHEMA_REF,
   SubRosaClient,
@@ -57,14 +58,21 @@ async function main(): Promise<void> {
   const deployment = resolveSubRosaDeployment('testnet');
   assertSorobanContract(deployment.contractId);
 
-  const cosmos = new CosmosPaySubRosaClient({
-    baseUrl: env('COSMOS_PAY_URL'),
-    gatewaySecret: env('COSMOS_PAY_GATEWAY_SECRET'),
-    consumerUsername: env('COSMOS_PAY_CONSUMER_USERNAME'),
-    permissions:
-      process.env.COSMOS_PAY_CONSUMER_PERMISSIONS ??
-      'plugins:read,plugins:write',
-  });
+  // An API key through the gateway; the gateway secret only for a Cosmos Pay
+  // server on this machine (the client refuses to send it anywhere else).
+  const apiKey = process.env.COSMOS_PAY_API_KEY?.trim();
+  const cosmos = new CosmosPaySubRosaClient(
+    apiKey
+      ? { baseUrl: env('COSMOS_PAY_URL'), apiKey }
+      : {
+          baseUrl: env('COSMOS_PAY_URL'),
+          gatewaySecret: env('COSMOS_PAY_GATEWAY_SECRET'),
+          consumerUsername: env('COSMOS_PAY_CONSUMER_USERNAME'),
+          permissions:
+            process.env.COSMOS_PAY_CONSUMER_PERMISSIONS ??
+            'plugins:read,plugins:write',
+        },
+  );
   await cosmos.install();
 
   const creator = new SubRosaClient({
@@ -125,6 +133,7 @@ async function main(): Promise<void> {
     createTxHash,
   });
 
+  console.log(`RFQ ${rfqId} attached to Stellar round ${roundId.toString()}`);
   const sealed = await sealProposal({
     round: revealRound,
     drand,
@@ -142,12 +151,27 @@ async function main(): Promise<void> {
 
   await waitUntil(revealAt);
   const signature = await fetchRoundSignature(drand, revealRound);
+  console.log('START: creator.openRevealV2');
   await creator.openRevealV2(roundId, signature);
+  console.log('SUCCESS: creator.openRevealV2');
   const openRevealTxHash = lastHash(creator, 'openRevealV2');
   const envelope = await openPayload(sealed.ciphertext, drand);
+  console.log('START: provider.revealV2');
   await provider.revealV2({ roundId, bidder: providerAddress, envelope });
+  console.log('SUCCESS: provider.revealV2');
   const revealTxHash = lastHash(provider, 'revealV2');
+  console.log('START: creator.clearV2');
+  const chainRound = await creator.getRoundV2(roundId);
+  if (chainRound.status?.tag !== 'Revealing') {
+    throw new Error(`Round is not revealing: ${chainRound.status?.tag}`);
+  }
+  const waitMs = remainingRevealWaitMs(Number(chainRound.reveal_deadline));
+  if (waitMs > 0) {
+    console.log(`Waiting ${Math.ceil(waitMs / 1000)}s for reveal deadline before clearV2…`);
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
   await creator.clearV2(roundId);
+  console.log('SUCCESS: creator.clearV2');
   const clearTxHash = lastHash(creator, 'clearV2');
 
   const receipt = await creator.exportReceiptV2(roundId);
@@ -202,6 +226,27 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  let cause: unknown = error;
+  while (cause instanceof Error) {
+    if (cause.message.includes('Error(Contract, #16)')) {
+      console.error(
+        'Sub Rosa #16 (RevealStillOpen): wait until the on-chain ' +
+        'reveal_deadline has passed, then retry clearV2 on the ' +
+        'EXISTING round. Do not start a new RFQ.'
+      );
+      break;
+    }
+    cause = cause.cause;
+  }
+  let current: unknown = error;
+  for (let i = 0; i < 4 && current !== undefined; i++) {
+    if (current instanceof Error) {
+      console.error(`ERROR ${i}: ${current.name}: ${current.message}`);
+      current = current.cause;
+    } else {
+      console.error(`ERROR ${i}:`, String(current));
+      break;
+    }
+  }
   process.exitCode = 1;
 });

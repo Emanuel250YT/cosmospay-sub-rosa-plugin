@@ -96,6 +96,33 @@ npm run test:live
 Secrets are read only by the local companion script. They are never sent to or
 stored by Cosmos Pay. CI never runs this opt-in script.
 
+## Troubleshooting: RevealStillOpen (Contract #16)
+
+`clear_v2` is allowed only **after the on-chain reveal deadline**.
+Receiving a Drand beacon and successfully revealing a proposal does not
+mean that the entire reveal window has closed.
+
+The live Testnet example reads the deadline from `getRoundV2()`,
+waits until that deadline plus a 10-second ledger buffer, and only
+then calls `clearV2()`.
+
+If an older client encounters `HostError: Error(Contract, #16)`:
+
+1. Keep the existing RFQ ID and Stellar round ID.
+2. Read the round with `getRoundV2(roundId)`.
+3. Wait until `reveal_deadline` has passed, allowing a short buffer.
+4. If the round is still `Revealing`, retry `clearV2(roundId)` using
+   the original creator wallet.
+5. Export and verify the receipt, then record the result in Cosmos Pay.
+
+**Do not restart `test:live` to recover:** the script creates a new
+RFQ and round on every run.
+
+Receipt note: `exportReceiptV2()` includes an `exportedAt` timestamp.
+Repeated exports may have different SHA-256 hashes. Save the exact
+serialized, verified receipt securely and hash those saved bytes.
+Never publish private proposal data or wallet secrets.
+
 ## Security boundaries
 
 - Wallet signing and Sub Rosa cryptography happen client-side.
