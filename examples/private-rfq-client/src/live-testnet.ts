@@ -57,14 +57,21 @@ async function main(): Promise<void> {
   const deployment = resolveSubRosaDeployment('testnet');
   assertSorobanContract(deployment.contractId);
 
-  const cosmos = new CosmosPaySubRosaClient({
-    baseUrl: env('COSMOS_PAY_URL'),
-    gatewaySecret: env('COSMOS_PAY_GATEWAY_SECRET'),
-    consumerUsername: env('COSMOS_PAY_CONSUMER_USERNAME'),
-    permissions:
-      process.env.COSMOS_PAY_CONSUMER_PERMISSIONS ??
-      'plugins:read,plugins:write',
-  });
+  // An API key through the gateway; the gateway secret only for a Cosmos Pay
+  // server on this machine (the client refuses to send it anywhere else).
+  const apiKey = process.env.COSMOS_PAY_API_KEY?.trim();
+  const cosmos = new CosmosPaySubRosaClient(
+    apiKey
+      ? { baseUrl: env('COSMOS_PAY_URL'), apiKey }
+      : {
+          baseUrl: env('COSMOS_PAY_URL'),
+          gatewaySecret: env('COSMOS_PAY_GATEWAY_SECRET'),
+          consumerUsername: env('COSMOS_PAY_CONSUMER_USERNAME'),
+          permissions:
+            process.env.COSMOS_PAY_CONSUMER_PERMISSIONS ??
+            'plugins:read,plugins:write',
+        },
+  );
   await cosmos.install();
 
   const creator = new SubRosaClient({

@@ -1,8 +1,62 @@
+/**
+ * How the client authenticates. Give exactly one of:
+ *
+ * - `apiKey`: a Cosmos Pay API key holding `plugins:read` and `plugins:write`,
+ *   sent to the gateway (`https://api.cosmospay.lat/cosmos-api`, or your own
+ *   APISIX) as `Authorization: Bearer` and `apikey`. This is the only mode for
+ *   a server that is not on this machine.
+ * - `gatewaySecret` + `consumerUsername`: local development against a Cosmos Pay
+ *   server on this machine with no gateway in front. The gateway secret lets
+ *   its holder act as ANY consumer with ANY permissions, so the client refuses
+ *   to send it anywhere but a loopback address.
+ */
 export interface CosmosPayClientOptions {
   baseUrl: string;
-  gatewaySecret: string;
-  consumerUsername: string;
+  apiKey?: string;
+  gatewaySecret?: string;
+  consumerUsername?: string;
   permissions?: string;
+}
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+function authHeaders(options: CosmosPayClientOptions): Record<string, string> {
+  let url: URL;
+  try {
+    url = new URL(options.baseUrl);
+  } catch {
+    throw new Error('baseUrl must be an absolute URL');
+  }
+  const loopback = LOOPBACK_HOSTS.has(url.hostname);
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
+    throw new Error('baseUrl must be https (plain http only to this machine)');
+  }
+  const viaGateway = options.gatewaySecret !== undefined;
+  if (Boolean(options.apiKey) === viaGateway) {
+    throw new Error('Give either apiKey or gatewaySecret + consumerUsername');
+  }
+  if (options.apiKey) {
+    return {
+      authorization: `Bearer ${options.apiKey}`,
+      apikey: options.apiKey,
+    };
+  }
+  if (!loopback) {
+    throw new Error(
+      'gatewaySecret is for a Cosmos Pay server on this machine only; use an apiKey for ' +
+        url.hostname,
+    );
+  }
+  if (!options.gatewaySecret || !options.consumerUsername) {
+    throw new Error('gatewaySecret mode needs gatewaySecret and consumerUsername');
+  }
+  return {
+    'x-gateway-secret': options.gatewaySecret,
+    'x-consumer-username': options.consumerUsername,
+    'x-consumer-role': 'user',
+    'x-consumer-permissions':
+      options.permissions ?? 'plugins:read,plugins:write',
+  };
 }
 
 export interface CreateRfqInput {
@@ -55,11 +109,7 @@ export class CosmosPaySubRosaClient {
     this.#baseUrl = options.baseUrl.replace(/\/$/, '');
     this.#headers = {
       'content-type': 'application/json',
-      'x-gateway-secret': options.gatewaySecret,
-      'x-consumer-username': options.consumerUsername,
-      'x-consumer-role': 'user',
-      'x-consumer-permissions':
-        options.permissions ?? 'plugins:read,plugins:write',
+      ...authHeaders(options),
     };
   }
 
@@ -123,11 +173,18 @@ export class CosmosPaySubRosaClient {
     const response = await fetch(`${this.#baseUrl}${path}`, {
       ...init,
       headers: { ...this.#headers, ...init.headers },
+      // A redirect would carry the credentials to wherever it points.
+      redirect: 'error',
     });
-    const body = (await response.json()) as T & {
-      message?: string | string[];
-      code?: string;
-    };
+    const text = await response.text();
+    let body: T & { message?: string | string[]; code?: string };
+    try {
+      body = JSON.parse(text) as typeof body;
+    } catch {
+      throw new Error(
+        `Cosmos Pay ${response.status}: the response is not JSON (${text.slice(0, 120)})`,
+      );
+    }
     if (!response.ok) {
       const message = Array.isArray(body.message)
         ? body.message.join('; ')
